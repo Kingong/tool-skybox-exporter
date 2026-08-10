@@ -27,7 +27,9 @@ PASS: e2e closed-loop complete (main site + popup + embed share page)
 |---|---|
 | embed 页数据来源 | SSR 注入的 RSC payload `initialData`（id/obfuscatedId/title/file_url/status 完整），无客户端 API 请求 |
 | `file_url` 形式 | `https://backend.blockadelabs.com/api/v1/skybox/download/<obfuscatedId>.jpg`（非 S3 直链） |
-| download 端点鉴权 | **无需鉴权**：Range/流式读取实证 body 首字节为 `FF D8 FF E0`（JFIF），content-type 标头误标 text/html 但内容为 JPEG |
+| download 端点鉴权 | **无需鉴权**：流式读取实证 body 首字节为 `FF D8 FF E0`（JFIF），content-type 标头误标 text/html 但内容为 JPEG |
+| 原图分辨率 | **8192×4096（8K）**：SOF0 段实证；EOI（`FF D9`）存在，文件完整 |
+| 水印 | viewer 的 image prop 即 download 端点 URL——分享页所见即所得，待用户复验时目视确认 |
 | `/api/proxy` 代理 download 端点 | 500（代理不转发该路径）→ 下载必须直连 backend 域名 |
 | content script isolated world | 访问不到 `window.__next_f`，但可从 DOM `<script>` 文本解析（`extractInitialDataFromScripts`） |
 
