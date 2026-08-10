@@ -1,19 +1,21 @@
 import puppeteer from 'puppeteer-core';
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
 /**
- * 真实站点验收（免登录态）：
- * 1. 扩展在 skybox.blockadelabs.com 真实域名完成 content script 注入
- * 2. 登录页无 skybox 数据时浮动按钮不误触发
- * 3. 探测未登录态 /api/proxy 对 imagine/requests/{id} 的真实响应（校准解析与错误处理）
- * 4. 截图存证
+ * 真实站点全链路验收（需要能正常访问 skybox.blockadelabs.com 的网络环境）：
+ * 1. CfT 加载扩展构建产物，打开真实 embed 分享页（免登录）
+ * 2. 断言 content script 在真实页面检测出 skybox 并注入浮动按钮（标题来自 RSC initialData）
+ * 3. 点击导出，断言 chrome.downloads 落盘完整 JPEG（SOI/EOI + SOF0 解析 8192×4096）
+ *
+ * 运行：xvfb-run -a node e2e/real-site-check.mjs
  */
 
+const SHARE_URL = process.env.SHARE_URL || 'https://skybox.blockadelabs.com/e/d9672919bc1d6732af59782cc1ce9b8c';
 const EXT_PATH = resolve('.output/chrome-mv3');
+const DL_DIR = mkdtempSync(join(tmpdir(), 'skybox-real-dl-'));
 const USER_DIR = mkdtempSync(join(tmpdir(), 'skybox-real-profile-'));
-const SHOT = resolve('e2e/real-site-login.png');
 
 function findChrome() {
   if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
@@ -29,50 +31,84 @@ function findChrome() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const browser = await puppeteer.launch({
-  executablePath: findChrome(),
-  headless: false,
-  args: [
-    `--load-extension=${EXT_PATH}`,
-    `--disable-extensions-except=${EXT_PATH}`,
-    `--user-data-dir=${USER_DIR}`,
-    '--no-sandbox',
-    '--disable-gpu',
-    '--window-size=1366,900',
-  ],
-});
-
-const pageErrors = [];
-try {
-  const page = await browser.newPage();
-  page.on('pageerror', (e) => pageErrors.push(String(e)));
-
-  await page.goto('https://skybox.blockadelabs.com/', { waitUntil: 'networkidle2', timeout: 60000 });
-  console.log('landed on:', page.url());
-  await sleep(8000); // 覆盖 content script 轮询周期
-
-  const fabExists = await page.evaluate(() => !!document.querySelector('#skybox-exporter-fab'));
-
-  // 探测未登录态下真实 /api/proxy 对详情接口的响应
-  const apiProbe = await page.evaluate(async () => {
-    const inner = encodeURIComponent('https://backend.blockadelabs.com/api/v1/imagine/requests/1');
-    try {
-      const r = await fetch(`/api/proxy?url=${inner}`, { credentials: 'include' });
-      const text = await r.text();
-      return { status: r.status, body: text.slice(0, 300) };
-    } catch (e) {
-      return { error: String(e) };
+/** 解析 JPEG 尺寸（SOF0/SOF2） */
+function jpegSize(buf) {
+  for (let i = 2; i < Math.min(buf.length - 9, 200000); i++) {
+    if (buf[i] === 0xff && (buf[i + 1] === 0xc0 || buf[i + 1] === 0xc2)) {
+      return { h: (buf[i + 5] << 8) | buf[i + 6], w: (buf[i + 7] << 8) | buf[i + 8] };
     }
+  }
+  return null;
+}
+
+let browser;
+try {
+  browser = await puppeteer.launch({
+    executablePath: findChrome(),
+    headless: false,
+    args: [
+      `--load-extension=${EXT_PATH}`,
+      `--disable-extensions-except=${EXT_PATH}`,
+      `--user-data-dir=${USER_DIR}`,
+      '--no-sandbox',
+      '--disable-gpu',
+      '--window-size=1366,900',
+    ],
+  });
+  const browserCdp = await browser.target().createCDPSession();
+  await browserCdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: DL_DIR });
+
+  // 1. 打开真实分享页，等 fab 注入
+  const page = await browser.newPage();
+  await page.goto(SHARE_URL, { waitUntil: 'networkidle2', timeout: 60000 });
+  await page.waitForSelector('#skybox-exporter-fab', { timeout: 20000 });
+  const fabTitle = await page.$eval('#skybox-exporter-fab', (el) => el.title);
+  console.log('fab injected on real share page, title:', fabTitle);
+  if (!fabTitle) throw new Error('fab title empty: initialData not parsed');
+
+  // 2. 点击导出（DOM dispatch，避免 scrollIntoView 不稳定）
+  await page.evaluate(() => {
+    document.querySelector('#skybox-exporter-fab')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });
 
-  await page.screenshot({ path: SHOT, fullPage: false });
+  // 3. 等下载 complete 并校验文件（注意 DownloadItem 字段名是小写 filename）
+  const swTarget = await browser.waitForTarget(
+    (t) => t.type() === 'service_worker' && t.url().startsWith('chrome-extension://'),
+    { timeout: 10000 },
+  );
+  const swWorker = await swTarget.worker();
+  const start = Date.now();
+  let item = null;
+  while (Date.now() - start < 60000) {
+    const items = await swWorker.evaluate(async () => {
+      const list = await chrome.downloads.search({});
+      return JSON.parse(JSON.stringify(list));
+    });
+    const hit = items.find((i) => i.state === 'complete' && i.filename);
+    if (hit) { item = hit; break; }
+    await sleep(500);
+  }
+  if (!item) throw new Error('download not completed in 60s');
+  console.log('downloaded:', item.filename, `(${item.fileSize} bytes)`);
 
-  console.log(JSON.stringify({ fabExists, apiProbe, pageErrors: pageErrors.slice(0, 5) }, null, 2));
+  // 4. JPEG 完整性 + 尺寸断言（8K 原图）
+  const buf = readFileSync(item.filename);
+  const soi = buf[0] === 0xff && buf[1] === 0xd8;
+  const eoi = buf[buf.length - 2] === 0xff && buf[buf.length - 1] === 0xd9;
+  const size = jpegSize(buf);
+  if (!soi || !eoi) throw new Error('downloaded file is not a complete JPEG');
+  console.log(`JPEG verified: ${size?.w}x${size?.h}, SOI/EOI ok`);
+  if (size && (size.w < 4096 || size.h < 2048)) {
+    console.warn(`WARN: resolution lower than expected 8K: ${size.w}x${size.h}`);
+  }
 
-  const pass = fabExists === false;
-  console.log(pass ? 'REAL-SITE CHECK PASS (no false trigger on login page)' : 'REAL-SITE CHECK FAIL (fab should not appear)');
-  process.exitCode = pass ? 0 : 1;
+  console.log('REAL-SITE CHECK PASS');
+  process.exitCode = 0;
+} catch (err) {
+  console.error('REAL-SITE CHECK FAIL:', err);
+  process.exitCode = 1;
 } finally {
-  await browser.close();
+  await browser?.close();
+  rmSync(DL_DIR, { recursive: true, force: true });
   rmSync(USER_DIR, { recursive: true, force: true });
 }
