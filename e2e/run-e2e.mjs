@@ -90,7 +90,27 @@ try {
   if (got.length !== want.length || !got.equals(want)) {
     throw new Error(`downloaded content mismatch: got ${got.length} bytes, want ${want.length}`);
   }
-  console.log(`PASS: exported ${file} (${statSync(file).size} bytes, byte-identical)`);
+  console.log(`download verified: ${file} (${statSync(file).size} bytes, byte-identical)`);
+
+  // 6. popup 渲染检查（同一浏览器会话；popup 作为独立 tab 打开时应为引导态）
+  const extTarget = browser.targets().find((t) => t.url().startsWith('chrome-extension://'));
+  if (!extTarget) throw new Error('extension target not found for popup check');
+  // 注意：chrome-extension 不是 WHATWG 特殊 scheme，new URL().origin 会返回 'null'，需手工截取
+  const extOrigin = extTarget.url().match(/^chrome-extension:\/\/[^/]+/)?.[0];
+  if (!extOrigin) throw new Error(`cannot derive extension origin from ${extTarget.url()}`);
+  const popupPage = await browser.newPage();
+  await popupPage.goto(`${extOrigin}/popup.html`, { waitUntil: 'networkidle0' });
+  await popupPage.waitForFunction(
+    () => document.body.innerText.includes('Skybox Exporter'),
+    { timeout: 8000 },
+  );
+  const popupText = await popupPage.evaluate(() => document.body.innerText);
+  if (!popupText.includes('请在 Skybox AI 页面') && !popupText.includes('未检测到')) {
+    throw new Error('popup did not render expected guidance state');
+  }
+  console.log('popup rendered (guidance state as expected in isolated tab)');
+
+  console.log('PASS: e2e closed-loop complete (fab export + popup)');
   process.exitCode = 0;
 } catch (err) {
   console.error('FAIL:', err);

@@ -60,6 +60,9 @@ export default defineContentScript({
       fab.disabled = true;
       fab.textContent = '导出中…';
       try {
+        // file_url 可能带时效签名，点击瞬间重新检测确保拿到新鲜 URL
+        const fresh = await detect().catch(() => null);
+        if (fresh?.fileUrl) current = fresh;
         const resp = await browser.runtime.sendMessage({
           type: 'EXPORT_SKYBOX',
           payload: { url: current.fileUrl, title: current.title },
