@@ -4,14 +4,16 @@
 
 ## 原理
 
-Skybox 前端 viewer 渲染全景时必须从后端加载原图。本扩展在页面内检测该原图 URL
-（`performance` 资源条目被动观察 + 复用页面自身 `/api/proxy` 接口主动查询），
-通过 `chrome.downloads` 直接下载原始文件——不做 canvas 截图，画质无损（最高 8192×4096）。
-点击导出的瞬间会重新查询一次详情，确保使用未过期的最新 URL。
+Skybox 前端 viewer 渲染全景时必须从后端加载原图。本扩展在页面内检测该原图 URL：
+分享页（`/e/<hash>`）直接解析 SSR 注入的 RSC `initialData`；生成器页面复用前端自身
+`/api/proxy` 接口主动查询 + `performance` 资源条目被动观察兜底。随后通过
+`chrome.downloads` 直连下载原始文件——不做 canvas 截图，画质无损（最高 8192×4096）。
+点击导出的瞬间会重新检测一次，确保使用未过期的最新 URL。
 
 ## 功能
 
 - 页面右下角注入「导出原图 (8K)」浮动按钮（检测到已完成 skybox 时出现）
+- 支持生成器页面与 **`/e/<hash>` 公开分享页**（解析 RSC `initialData`，直连公开 download 端点）
 - 工具栏 popup 展示当前 skybox 卡片（缩略图 / 标题 / 状态）并提供导出入口
 - 下载文件名自动使用 skybox 标题（非法字符自动清洗）
 

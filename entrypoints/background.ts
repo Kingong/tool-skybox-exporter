@@ -11,8 +11,14 @@ export default defineBackground(() => {
         filename: `${sanitizeFilename(msg.payload.title)}.jpg`,
         saveAs: false,
       })
-      .then((downloadId) => sendResponse({ ok: true, downloadId } satisfies ExportResponse))
-      .catch((err) => sendResponse({ ok: false, error: String(err) } satisfies ExportResponse));
+      .then((downloadId) => {
+        console.log('[skybox-exporter] download started:', downloadId, msg.payload.url);
+        sendResponse({ ok: true, downloadId } satisfies ExportResponse);
+      })
+      .catch((err) => {
+        console.error('[skybox-exporter] download failed:', String(err), msg.payload.url);
+        sendResponse({ ok: false, error: String(err) } satisfies ExportResponse);
+      });
     return true; // 异步 sendResponse
   });
 });

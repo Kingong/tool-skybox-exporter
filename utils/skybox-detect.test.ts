@@ -1,10 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   parseSkyboxIdFromUrl,
+  parseObfuscatedIdFromPath,
+  buildDownloadUrl,
   isOriginalImageUrl,
   extractFromResourceEntries,
+  extractInitialDataFromScripts,
   fetchSkyboxById,
   sanitizeFilename,
+  detectSkybox,
 } from './skybox-detect';
 
 describe('parseSkyboxIdFromUrl', () => {
@@ -32,8 +36,99 @@ describe('isOriginalImageUrl', () => {
     expect(isOriginalImageUrl(`${host}/thumbs/imagine/abc.jpg`)).toBe(false);
     expect(isOriginalImageUrl(`${host}/depths/imagine/abc.jpg`)).toBe(false);
   });
+  it('命中 images CDN 的 _file 图', () => {
+    expect(isOriginalImageUrl('https://images.blockadelabs.com/skybox-starters/92_a185f322c5adc94e85b02be3f5b427d4_file.jpg')).toBe(true);
+    expect(isOriginalImageUrl('https://images.blockadelabs.com/skybox-starters/92_a185f322c5adc94e85b02be3f5b427d4_thumb.webp')).toBe(false);
+  });
+  it('命中 backend download 端点', () => {
+    expect(isOriginalImageUrl('https://backend.blockadelabs.com/api/v1/skybox/download/d9672919bc1d6732af59782cc1ce9b8c.jpg')).toBe(true);
+  });
   it('排除其他域名', () => {
     expect(isOriginalImageUrl('https://example.com/images/a.jpg')).toBe(false);
+  });
+});
+
+describe('parseObfuscatedIdFromPath', () => {
+  it('解析 embed 分享页路径', () => {
+    expect(parseObfuscatedIdFromPath('/e/d9672919bc1d6732af59782cc1ce9b8c')).toBe('d9672919bc1d6732af59782cc1ce9b8c');
+    expect(parseObfuscatedIdFromPath('/e/d9672919bc1d6732af59782cc1ce9b8c/')).toBe('d9672919bc1d6732af59782cc1ce9b8c');
+  });
+  it('拒绝非 embed 路径与非法 hash', () => {
+    expect(parseObfuscatedIdFromPath('/login')).toBeNull();
+    expect(parseObfuscatedIdFromPath('/e/xyz')).toBeNull();
+    expect(parseObfuscatedIdFromPath('/generate')).toBeNull();
+  });
+});
+
+describe('buildDownloadUrl', () => {
+  it('构造公开 download 端点', () => {
+    expect(buildDownloadUrl('d9672919bc1d6732af59782cc1ce9b8c')).toBe(
+      'https://backend.blockadelabs.com/api/v1/skybox/download/d9672919bc1d6732af59782cc1ce9b8c.jpg',
+    );
+  });
+});
+
+describe('extractInitialDataFromScripts', () => {
+  // 模拟真实 RSC payload：script 文本内 JSON 字符串转义形式
+  const embedPayload = '22:["$","$L29",null,{"initialData":{"id":15603635,"obfuscatedId":"d9672919bc1d6732af59782cc1ce9b8c","title":"World #15603635","status":"complete","file_url":"https://backend.blockadelabs.com/api/v1/skybox/download/d9672919bc1d6732af59782cc1ce9b8c.jpg"}}]';
+  const scriptText = `self.__next_f=self.__next_f||[];self.__next_f.push([1,${JSON.stringify(embedPayload)}]);`;
+
+  it('从 RSC script 文本解析 initialData', () => {
+    const data = extractInitialDataFromScripts([{ textContent: scriptText }]);
+    expect(data).toMatchObject({
+      id: 15603635,
+      obfuscatedId: 'd9672919bc1d6732af59782cc1ce9b8c',
+      title: 'World #15603635',
+      status: 'complete',
+    });
+  });
+  it('无 initialData 时返回 null', () => {
+    expect(extractInitialDataFromScripts([{ textContent: 'self.__next_f.push([1,"{}"]);' }])).toBeNull();
+    expect(extractInitialDataFromScripts([{ textContent: '' }, { textContent: null }])).toBeNull();
+    expect(extractInitialDataFromScripts([])).toBeNull();
+  });
+});
+
+describe('detectSkybox 通道优先级', () => {
+  const embedPayload = 'x:{"initialData":{"id":7,"obfuscatedId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"Embed World","status":"complete","file_url":"https://backend.blockadelabs.com/api/v1/skybox/download/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg"}}';
+  const embedScript = `self.__next_f.push([1,${JSON.stringify(embedPayload)}]);`;
+
+  it('通道1：RSC initialData 优先', async () => {
+    const info = await detectSkybox({
+      pathname: '/e/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      scripts: [{ textContent: embedScript }],
+      entries: [],
+    });
+    expect(info).toMatchObject({ id: 7, title: 'Embed World', fileUrl: expect.stringContaining('/skybox/download/') });
+  });
+  it('通道2：embed URL 构造（无 RSC 数据时）', async () => {
+    const info = await detectSkybox({ pathname: '/e/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', scripts: [], entries: [] });
+    expect(info?.fileUrl).toBe('https://backend.blockadelabs.com/api/v1/skybox/download/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.jpg');
+  });
+  it('通道3：主动 API（登录态主应用路径）', async () => {
+    const inner = encodeURIComponent('https://backend.blockadelabs.com/api/v1/imagine/requests/42');
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify({ request: { id: 42, title: 'T', status: 'complete', file_url: 'https://x/y.jpg' } }), { status: 200 }),
+    );
+    const info = await detectSkybox({
+      pathname: '/imagine/42',
+      scripts: [],
+      entries: [{ name: `https://skybox.blockadelabs.com/api/proxy?url=${inner}` }],
+      fetcher: fetcher as unknown as typeof fetch,
+    });
+    expect(info?.fileUrl).toBe('https://x/y.jpg');
+  });
+  it('通道4：被动图床兜底', async () => {
+    const info = await detectSkybox({
+      pathname: '/whatever',
+      scripts: [],
+      entries: [{ name: 'https://images.blockadelabs.com/skybox-starters/92_a185f322c5adc94e85b02be3f5b427d4_file.jpg' }],
+    });
+    expect(info?.fileUrl).toContain('_file.jpg');
+  });
+  it('全部无命中返回 null（登录页场景）', async () => {
+    const info = await detectSkybox({ pathname: '/login', scripts: [], entries: [{ name: 'https://www.googletagmanager.com/gtm.js?id=1' }] });
+    expect(info).toBeNull();
   });
 });
 

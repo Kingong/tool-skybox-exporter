@@ -14,12 +14,26 @@ const page = `<!doctype html><html><head><meta charset="utf-8"><title>Mock Skybo
 </script>
 </body></html>`;
 
+/** 模拟 embed 分享页：RSC payload 内嵌 initialData（与真实页面同构） */
+function embedPage(hash) {
+  const payload = `22:["$","$L29",null,{"initialData":{"id":15603635,"obfuscatedId":"${hash}","title":"Mock Embed Pano","status":"complete","file_url":"http://127.0.0.1:${PORT}/fake-image.jpg?scene=embed"}}]`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Mock Embed</title></head><body>
+<div id="app">Mock Embed Viewer</div>
+<script>self.__next_f=self.__next_f||[];self.__next_f.push([1,${JSON.stringify(payload)}]);</script>
+</body></html>`;
+}
+
+export const EMBED_HASH = 'abcdef0123456789abcdef0123456789';
+
 export function startMockSite() {
   const server = http.createServer((req, res) => {
     const u = new URL(req.url ?? '/', `http://127.0.0.1:${PORT}`);
     if (u.pathname === '/') {
       res.setHeader('content-type', 'text/html; charset=utf-8');
       res.end(page);
+    } else if (u.pathname === `/e/${EMBED_HASH}`) {
+      res.setHeader('content-type', 'text/html; charset=utf-8');
+      res.end(embedPage(EMBED_HASH));
     } else if (u.pathname === '/api/proxy') {
       res.setHeader('content-type', 'application/json');
       res.end(JSON.stringify({

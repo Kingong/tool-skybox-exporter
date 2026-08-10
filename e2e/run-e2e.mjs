@@ -2,7 +2,7 @@ import puppeteer from 'puppeteer-core';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { startMockSite, FAKE_JPG_B64 } from './mock-site.mjs';
+import { startMockSite, FAKE_JPG_B64, EMBED_HASH } from './mock-site.mjs';
 
 const EXT_PATH = resolve('.output/chrome-mv3');
 const DL_DIR = mkdtempSync(join(tmpdir(), 'skybox-e2e-dl-'));
@@ -29,10 +29,10 @@ const CHROME = findChrome();
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function waitDownloadedFile(dir, timeoutMs = 20000) {
+async function waitDownloadedFile(dir, timeoutMs = 20000, exclude = new Set()) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    const files = readdirSync(dir).filter((f) => !f.endsWith('.crdownload'));
+    const files = readdirSync(dir).filter((f) => !f.endsWith('.crdownload') && !exclude.has(f));
     if (files.length) return join(dir, files[0]);
     await sleep(300);
   }
@@ -69,10 +69,13 @@ try {
   ]);
   console.log('extension service worker:', sw ? sw.url() : '(not active yet, lazily started)');
 
-  // 2. 打开 mock 站点
+  // 2. 打开 mock 站点（下载行为用 browser 级 CDP 设置，对所有 page 生效）
+  const browserCdp = await browser.target().createCDPSession();
+  await browserCdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: DL_DIR, eventsEnabled: true });
+  // 监听 browser 级下载事件（诊断）
+  browserCdp.on('Browser.downloadProgress', (e) => console.log('[dl progress]', e.state, e.guid));
+  browserCdp.on('Browser.downloadWillBegin', (e) => console.log('[dl begin]', e.url, e.suggestedFilename));
   const page = await browser.newPage();
-  const cdp = await page.createCDPSession();
-  await cdp.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: DL_DIR });
   await page.goto('http://127.0.0.1:18777/', { waitUntil: 'networkidle0' });
 
   // 3. 等 content script 检测并注入浮动按钮（轮询周期 2s，给足余量）
@@ -110,7 +113,41 @@ try {
   }
   console.log('popup rendered (guidance state as expected in isolated tab)');
 
-  console.log('PASS: e2e closed-loop complete (fab export + popup)');
+  // 7. embed 分享页场景（通道1：RSC initialData 检测）——同一 tab 导航（贴合真实使用）
+  await page.goto(`http://127.0.0.1:18777/e/${EMBED_HASH}`, { waitUntil: 'networkidle0' });
+  await page.waitForSelector('#skybox-exporter-fab', { timeout: 15000 });
+  const fabTitle = await page.$eval('#skybox-exporter-fab', (el) => el.title);
+  if (fabTitle !== 'Mock Embed Pano') throw new Error(`fab title mismatch: ${fabTitle}`);
+  console.log('embed fab injected with RSC title:', fabTitle);
+  // attach SW 拿下载状态（chrome.downloads.search 的 DownloadItem 字段名是小写 filename）
+  const swTarget = browser.targets().find((t) => t.type() === 'service_worker' && t.url().startsWith('chrome-extension://'));
+  if (!swTarget) throw new Error('no SW target');
+  const swWorker = await swTarget.worker();
+  swWorker.on('console', (m) => console.log('[sw]', m.text()));
+  // DOM click 派发（puppeteer click 的 scrollIntoView 在此环境对 fixed 元素不稳定）
+  await page.evaluate(() => {
+    document.querySelector('#skybox-exporter-fab')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+  // 轮询等第二个下载 complete，拿实际落盘路径做字节断言
+  const start = Date.now();
+  let item2 = null;
+  while (Date.now() - start < 20000) {
+    const items = await swWorker.evaluate(async () => {
+      const list = await chrome.downloads.search({});
+      return JSON.parse(JSON.stringify(list));
+    });
+    const hit = items.find((i) => i.id > 1 && i.state === 'complete' && i.filename);
+    if (hit) { item2 = hit; break; }
+    await sleep(300);
+  }
+  if (!item2) throw new Error('embed scenario download not completed');
+  const got2 = readFileSync(item2.filename);
+  if (!got2.equals(Buffer.from(FAKE_JPG_B64, 'base64'))) {
+    throw new Error('embed scenario downloaded content mismatch');
+  }
+  console.log(`embed scenario verified: ${item2.filename} (byte-identical)`);
+
+  console.log('PASS: e2e closed-loop complete (main site + popup + embed share page)');
   process.exitCode = 0;
 } catch (err) {
   console.error('FAIL:', err);

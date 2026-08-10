@@ -13,10 +13,23 @@ extension service worker: chrome-extension://<id>/background.js
 fab injected
 download verified: fake-image.jpg (518 bytes, byte-identical)
 popup rendered (guidance state as expected in isolated tab)
-PASS: e2e closed-loop complete (fab export + popup)
+embed fab injected with RSC title: Mock Embed Pano
+embed scenario verified: ... (byte-identical)
+PASS: e2e closed-loop complete (main site + popup + embed share page)
 ```
 
-覆盖：扩展加载 → content script 检测（主动通道）→ 按钮注入 → 点击导出 → background 下载 → 字节级一致；popup Vue 应用渲染与引导态。
+覆盖：扩展加载 → content script 检测（主动 API 通道 + RSC initialData 通道）→ 按钮注入
+→ 点击导出 → background 下载 → 字节级一致；popup Vue 应用渲染与引导态。
+
+### 真实分享页实证（2026-08-10，`/e/d9672919bc1d6732af59782cc1ce9b8c`）
+
+| 探测项 | 结果 |
+|---|---|
+| embed 页数据来源 | SSR 注入的 RSC payload `initialData`（id/obfuscatedId/title/file_url/status 完整），无客户端 API 请求 |
+| `file_url` 形式 | `https://backend.blockadelabs.com/api/v1/skybox/download/<obfuscatedId>.jpg`（非 S3 直链） |
+| download 端点鉴权 | **无需鉴权**：Range/流式读取实证 body 首字节为 `FF D8 FF E0`（JFIF），content-type 标头误标 text/html 但内容为 JPEG |
+| `/api/proxy` 代理 download 端点 | 500（代理不转发该路径）→ 下载必须直连 backend 域名 |
+| content script isolated world | 访问不到 `window.__next_f`，但可从 DOM `<script>` 文本解析（`extractInitialDataFromScripts`） |
 
 ## 3. 真实站点探测（2026-08-10，免登录态，skybox.blockadelabs.com/login）
 
@@ -30,5 +43,8 @@ PASS: e2e closed-loop complete (fab export + popup)
 
 ## 4. 真实登录态验收（待用户主浏览器执行）
 
-剩余唯一未实证项：免费账号 `file_url` 是否为无水印 8K 原图。
-步骤：主浏览器加载 `.output/chrome-mv3` → 打开任一已生成 skybox → 点击「导出原图 (8K)」→ 检查下载文件。
+剩余未实证项：
+1. 免费账号生成器页面的检测与导出（登录态 `imagine/requests/{id}` 通道）
+2. 分享页场景真实验收：打开任一分享链接 → 右下角应出现「导出原图 (8K)」→ 下载为无水印原图
+
+步骤：主浏览器加载 `.output/chrome-mv3` → 分别打开生成器页面与 `/e/<hash>` 分享页 → 点击导出验证。

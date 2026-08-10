@@ -1,30 +1,24 @@
 import { browser } from 'wxt/browser';
-import { extractFromResourceEntries, fetchSkyboxById } from '@/utils/skybox-detect';
+import { detectSkybox, extractFromResourceEntries } from '@/utils/skybox-detect';
 import type { GetDetectedResponse, SkyboxInfo } from '@/utils/types';
 
 const FAB_ID = 'skybox-exporter-fab';
 
 export default defineContentScript({
-  // 生产匹配 Skybox 官网；127.0.0.1 为 e2e mock 站点（match pattern 不支持端口号，按主机匹配）
+  // 生产匹配 Skybox 官网（含 /e/<hash> 分享页）；127.0.0.1 为 e2e mock 站点
   matches: ['*://skybox.blockadelabs.com/*', 'http://127.0.0.1/*'],
   main(ctx) {
     let current: SkyboxInfo | null = null;
     let detecting = false;
     let fab: HTMLButtonElement | null = null;
 
-    /** 双通道检测：主动（/api/proxy id → 详情）优先，被动（S3 原图 entry）兜底 */
+    /** 四通道检测（RSC initialData / embed URL 构造 / 主动 API / 被动图床） */
     async function detect(): Promise<SkyboxInfo | null> {
-      const assets = extractFromResourceEntries(performance.getEntriesByType('resource'));
-      for (const id of [...assets.skyboxIds].reverse()) {
-        try {
-          return await fetchSkyboxById(id);
-        } catch {
-          /* 尝试下一个 id */
-        }
-      }
-      const url = assets.fileUrls[assets.fileUrls.length - 1];
-      if (url) return { id: 0, title: 'skybox', fileUrl: url, status: 'complete' };
-      return null;
+      return detectSkybox({
+        pathname: location.pathname,
+        scripts: [...document.scripts],
+        entries: performance.getEntriesByType('resource'),
+      });
     }
 
     function ensureFab(): HTMLButtonElement {
