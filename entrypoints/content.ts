@@ -10,6 +10,7 @@ export default defineContentScript({
   main(ctx) {
     let current: SkyboxInfo | null = null;
     let detecting = false;
+    let exporting = false; // 导出反馈展示期间，轮询不打断文案
     let fab: HTMLButtonElement | null = null;
 
     /** 四通道检测（RSC initialData / embed URL 构造 / 主动 API / 被动图床） */
@@ -38,6 +39,7 @@ export default defineContentScript({
     }
 
     function syncFab() {
+      if (exporting) return; // 反馈期间保留「导出中…/已开始下载 ✓」文案
       if (current?.fileUrl && current.status === 'complete') {
         const btn = ensureFab();
         btn.disabled = false;
@@ -50,7 +52,8 @@ export default defineContentScript({
     }
 
     async function onExport() {
-      if (!current?.fileUrl || !fab) return;
+      if (!current?.fileUrl || !fab || exporting) return;
+      exporting = true;
       fab.disabled = true;
       fab.textContent = '导出中…';
       try {
@@ -65,7 +68,10 @@ export default defineContentScript({
       } catch (err) {
         fab.textContent = `导出失败: ${String(err)}`;
       }
-      setTimeout(syncFab, 3000);
+      setTimeout(() => {
+        exporting = false;
+        syncFab();
+      }, 3000);
     }
 
     async function refresh() {
