@@ -56,6 +56,7 @@ export function extractFromResourceEntries(entries: ReadonlyArray<{ name: string
 /**
  * 从页面 <script> 标签中解析 Next.js RSC payload（self.__next_f.push）里的 initialData。
  * content script 处于 isolated world 访问不到页面 window.__next_f，但 DOM 中文本可读。
+ * push 的第一个元素为 chunk 类型标记（实测为 1），放宽匹配任意数字以兼容 Next.js 变体。
  * 返回解析出的对象（含 id/obfuscatedId/title/file_url/status 等），未找到返回 null。
  */
 export function extractInitialDataFromScripts(
@@ -64,7 +65,7 @@ export function extractInitialDataFromScripts(
   for (const s of scripts) {
     const t = s.textContent;
     if (!t || !t.includes('__next_f') || !t.includes('initialData')) continue;
-    for (const m of t.matchAll(/self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)/gs)) {
+    for (const m of t.matchAll(/self\.__next_f\.push\(\[\d+,("(?:[^"\\]|\\.)*")\]\)/gs)) {
       let chunk: string;
       try {
         chunk = JSON.parse(m[1]);

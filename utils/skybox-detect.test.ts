@@ -87,6 +87,17 @@ describe('extractInitialDataFromScripts', () => {
     expect(extractInitialDataFromScripts([{ textContent: '' }, { textContent: null }])).toBeNull();
     expect(extractInitialDataFromScripts([])).toBeNull();
   });
+  it('兼容多 push 混合与不同 chunk 类型标记（真实页面形态）', () => {
+    const dataPush = '5:["$","$L29",null,{"initialData":{"id":9,"obfuscatedId":"cccccccccccccccccccccccccccccccc","title":"T","status":"complete","file_url":"https://backend.blockadelabs.com/api/v1/skybox/download/cccccccccccccccccccccccccccccccc.jpg"}}]';
+    const mixed = [
+      'self.__next_f=self.__next_f||[];',
+      'self.__next_f.push([0,"{}"]);', // 类型 0 无关 push
+      `self.__next_f.push([1,${JSON.stringify('2:HL["/_next/static/css/x.css","style"]') }]);`, // 资源预载 push
+      `self.__next_f.push([3,${JSON.stringify(dataPush)}]);`, // 类型 3 的 initialData push
+    ].join('');
+    const data = extractInitialDataFromScripts([{ textContent: mixed }]);
+    expect(data).toMatchObject({ id: 9, title: 'T' });
+  });
 });
 
 describe('detectSkybox 通道优先级', () => {
