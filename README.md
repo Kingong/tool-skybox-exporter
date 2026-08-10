@@ -39,6 +39,7 @@ pnpm e2e      # 端到端闭环验收（mock 站点 + Chrome for Testing 加载�
 ## 合规声明
 
 - 仅供导出**本人账号生成**的内容；生成内容的许可条款以 Blockade Labs 官方为准（免费内容为 CC-BY）。
+- **关于水印**：免费账号官方下发的图片带上下水印横幅（服务端强制，viewer 所见即所得）。本扩展按原样下载，不提供、也不计划提供去水印能力；真正无水印原图请订阅官方 premium。
 - 本项目与 Blockade Labs 无关，为非官方工具；不提供官方 premium 导出格式（HDRI / cube-map / 3D 等）的任何能力。
 - e2e 使用的 `http://127.0.0.1/*` content script 匹配仅用于本地自动化验收。
 
