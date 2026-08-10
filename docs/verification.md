@@ -33,6 +33,7 @@ PASS: e2e closed-loop complete (main site + popup + embed share page)
 | `/api/proxy` 代理 download 端点 | 500（代理不转发该路径）→ 下载必须直连 backend 域名 |
 | content script isolated world | 访问不到 `window.__next_f`，但可从 DOM `<script>` 文本解析（`extractInitialDataFromScripts`） |
 | **检测逻辑真实 DOM 验证** | **PASS**：将 `extractInitialDataFromScripts` 精确副本注入真实分享页执行，成功解析 initialData（id=15603635，title="World #15603635"，status=complete，file_url 正确），另确认含 thumb_url / depth_map_url 等 41 个字段 |
+| **全量原图下载实证** | **PASS**：真实分享页上下文 fetch download 端点全量 5,065,440 字节，SOI/EOI 完整，SOF0 解析 8192×4096；并通过页面级 `a[download]` 在用户本机浏览器触发真实下载（"World #15603635.jpg"） |
 
 ## 3. 真实站点探测（2026-08-10，免登录态，skybox.blockadelabs.com/login）
 
