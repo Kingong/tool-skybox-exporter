@@ -145,6 +145,7 @@ function infoFromInitialData(d: Record<string, unknown>): SkyboxInfo | null {
     obfuscatedId: typeof d.obfuscatedId === 'string' ? d.obfuscatedId : undefined,
     title: typeof d.title === 'string' ? d.title : 'skybox',
     fileUrl: d.file_url,
+    thumbUrl: typeof d.thumb_url === 'string' ? d.thumb_url : undefined,
     status: String(d.status ?? 'complete'),
   };
 }

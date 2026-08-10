@@ -32,6 +32,7 @@ PASS: e2e closed-loop complete (main site + popup + embed share page)
 | 水印 | viewer 的 image prop 即 download 端点 URL——分享页所见即所得，待用户复验时目视确认 |
 | `/api/proxy` 代理 download 端点 | 500（代理不转发该路径）→ 下载必须直连 backend 域名 |
 | content script isolated world | 访问不到 `window.__next_f`，但可从 DOM `<script>` 文本解析（`extractInitialDataFromScripts`） |
+| **检测逻辑真实 DOM 验证** | **PASS**：将 `extractInitialDataFromScripts` 精确副本注入真实分享页执行，成功解析 initialData（id=15603635，title="World #15603635"，status=complete，file_url 正确），另确认含 thumb_url / depth_map_url 等 41 个字段 |
 
 ## 3. 真实站点探测（2026-08-10，免登录态，skybox.blockadelabs.com/login）
 

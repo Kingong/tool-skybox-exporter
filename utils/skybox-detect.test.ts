@@ -101,7 +101,7 @@ describe('extractInitialDataFromScripts', () => {
 });
 
 describe('detectSkybox 通道优先级', () => {
-  const embedPayload = 'x:{"initialData":{"id":7,"obfuscatedId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"Embed World","status":"complete","file_url":"https://backend.blockadelabs.com/api/v1/skybox/download/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg"}}';
+  const embedPayload = 'x:{"initialData":{"id":7,"obfuscatedId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"Embed World","status":"complete","file_url":"https://backend.blockadelabs.com/api/v1/skybox/download/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg","thumb_url":"https://backend.blockadelabs.com/api/v1/skybox/download/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_thumb.jpg"}}';
   const embedScript = `self.__next_f.push([1,${JSON.stringify(embedPayload)}]);`;
 
   it('通道1：RSC initialData 优先', async () => {
@@ -110,7 +110,12 @@ describe('detectSkybox 通道优先级', () => {
       scripts: [{ textContent: embedScript }],
       entries: [],
     });
-    expect(info).toMatchObject({ id: 7, title: 'Embed World', fileUrl: expect.stringContaining('/skybox/download/') });
+    expect(info).toMatchObject({
+      id: 7,
+      title: 'Embed World',
+      fileUrl: expect.stringContaining('/skybox/download/'),
+      thumbUrl: expect.stringContaining('_thumb.jpg'),
+    });
   });
   it('通道2：embed URL 构造（无 RSC 数据时）', async () => {
     const info = await detectSkybox({ pathname: '/e/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', scripts: [], entries: [] });
