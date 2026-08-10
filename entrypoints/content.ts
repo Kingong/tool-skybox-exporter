@@ -5,8 +5,8 @@ import type { GetDetectedResponse, SkyboxInfo } from '@/utils/types';
 const FAB_ID = 'skybox-exporter-fab';
 
 export default defineContentScript({
-  // 生产匹配 Skybox 官网；18777 为 e2e mock 站点端口
-  matches: ['*://skybox.blockadelabs.com/*', 'http://127.0.0.1:18777/*'],
+  // 生产匹配 Skybox 官网；127.0.0.1 为 e2e mock 站点（match pattern 不支持端口号，按主机匹配）
+  matches: ['*://skybox.blockadelabs.com/*', 'http://127.0.0.1/*'],
   main(ctx) {
     let current: SkyboxInfo | null = null;
     let detecting = false;

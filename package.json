@@ -13,7 +13,7 @@
     "zip:firefox": "wxt zip -b firefox",
     "compile": "vue-tsc --noEmit",
     "test": "vitest run",
-    "e2e": "node e2e/run-e2e.mjs",
+    "e2e": "xvfb-run -a node e2e/run-e2e.mjs",
     "postinstall": "wxt prepare"
   },
   "dependencies": {
@@ -21,6 +21,7 @@
   },
   "devDependencies": {
     "@wxt-dev/module-vue": "^1.0.3",
+    "puppeteer-core": "^25.5.0",
     "typescript": "^5.9.3",
     "vite": "^8.1.5",
     "vitest": "^4.1.10",
