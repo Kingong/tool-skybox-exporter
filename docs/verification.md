@@ -35,6 +35,8 @@ PASS: e2e closed-loop complete (main site + popup + embed share page)
 | **检测逻辑真实 DOM 验证** | **PASS**：将 `extractInitialDataFromScripts` 精确副本注入真实分享页执行，成功解析 initialData（id=15603635，title="World #15603635"，status=complete，file_url 正确），另确认含 thumb_url / depth_map_url 等 41 个字段 |
 | **全量原图下载实证** | **PASS**：真实分享页上下文 fetch download 端点全量 5,065,440 字节，SOI/EOI 完整，SOF0 解析 8192×4096；并通过页面级 `a[download]` 在用户本机浏览器触发真实下载（"World #15603635.jpg"） |
 | **水印终局实证（用户复验触发）** | 免费账号全部免鉴权通道均为**带水印版**：`file_url` 下载件含水印横幅；`original_file_url`（/true 后缀）返回 500；`/original` 变体与带水印版逐字节相同。无水印版为 premium 权益，服务端强制 |
+| **横幅边界 8K 原图复测** | 三列采样 + 连续行判定：顶部横幅 **16.41%**、底部 **16.02%**（过渡均在 2 行内陡变）。裁剪参数 17%/17% 余量充足且不侵内容 |
+| **裁剪链路 e2e** | **PASS**：带横幅测试图 800×400 → 输出 800×264（66%），上下边缘亮度 167/220（深灰带 45-52 已消除） |
 
 ## 3. 真实站点探测（2026-08-10，免登录态，skybox.blockadelabs.com/login）
 
