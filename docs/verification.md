@@ -37,6 +37,7 @@ PASS: e2e closed-loop complete (main site + popup + embed share page)
 | **水印终局实证（用户复验触发）** | 免费账号全部免鉴权通道均为**带水印版**：`file_url` 下载件含水印横幅；`original_file_url`（/true 后缀）返回 500；`/original` 变体与带水印版逐字节相同。无水印版为 premium 权益，服务端强制 |
 | **横幅边界 8K 原图复测** | 三列采样 + 连续行判定：顶部横幅 **16.41%**、底部 **16.02%**（过渡均在 2 行内陡变）。裁剪参数 17%/17% 余量充足且不侵内容 |
 | **裁剪链路 e2e** | **PASS**：带横幅测试图 800×400 → 输出 800×264（66%），上下边缘亮度 167/220（深灰带 45-52 已消除） |
+| **裁剪链路真实环境验证** | **PASS**：真实 8K 带水印图走 `cropImageBlob` 同路径（createImageBitmap 裁剪 → 8192×2703 canvas → toBlob q0.95），输出 3.83MB JPEG，上缘亮度 175（天空）/下缘 120（地面），无横幅残留 |
 
 ## 3. 真实站点探测（2026-08-10，免登录态，skybox.blockadelabs.com/login）
 
