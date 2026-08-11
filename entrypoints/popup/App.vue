@@ -8,11 +8,13 @@ type ViewState = 'loading' | 'not-skybox' | 'none' | 'ready';
 const state = ref<ViewState>('loading');
 const current = ref<SkyboxInfo | null>(null);
 const feedback = ref('');
+let activeTabId: number | undefined;
 
 onMounted(async () => {
   try {
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) throw new Error('no active tab');
+    activeTabId = tab.id;
     const resp: GetDetectedResponse = await browser.tabs.sendMessage(tab.id, { type: 'GET_DETECTED' });
     if (resp?.current?.fileUrl) {
       current.value = resp.current;
@@ -38,6 +40,17 @@ async function onExport() {
     feedback.value = `导出失败: ${String(err)}`;
   }
 }
+
+/** 裁剪版委托页面内 content script 执行（页面上下文 fetch + canvas + a[download]） */
+async function onExportCropped() {
+  if (!current.value || !activeTabId) return;
+  feedback.value = '已在页面开始裁剪下载 ✓';
+  try {
+    await browser.tabs.sendMessage(activeTabId, { type: 'EXPORT_CROPPED_LOCAL' });
+  } catch (err) {
+    feedback.value = `触发失败: ${String(err)}`;
+  }
+}
 </script>
 
 <template>
@@ -50,7 +63,8 @@ async function onExport() {
       <img v-if="current?.thumbUrl" :src="current.thumbUrl" alt="preview" class="thumb" />
       <p class="title">{{ current?.title }}</p>
       <p class="status">状态: {{ current?.status }}</p>
-      <button class="export" @click="onExport">导出原图 (8K)</button>
+      <button class="export" @click="onExportCropped">导出无横幅版 (8K)</button>
+      <button class="export plain" @click="onExport">原图（带水印）</button>
     </section>
     <p v-if="feedback" class="feedback">{{ feedback }}</p>
   </main>
@@ -63,5 +77,6 @@ h1 { font-size: 16px; margin: 0 0 8px; }
 .title { font-weight: 600; margin: 8px 0 2px; }
 .status { color: #666; font-size: 12px; margin: 0 0 8px; }
 .export { width: 100%; padding: 8px; border: none; border-radius: 6px; background: #6c5ce7; color: #fff; font-weight: 600; cursor: pointer; }
+.export.plain { background: #2d3436; margin-top: 6px; }
 .feedback { margin-top: 8px; font-size: 12px; color: #2d8a4e; }
 </style>

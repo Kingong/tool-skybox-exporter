@@ -1,4 +1,10 @@
 import http from 'node:http';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const BANDED_JPG = readFileSync(join(HERE, 'banded-test.jpg'));
 
 export const PORT = 18777;
 // 最小合法 JPEG（1x1 红像素）
@@ -16,7 +22,7 @@ const page = `<!doctype html><html><head><meta charset="utf-8"><title>Mock Skybo
 
 /** 模拟 embed 分享页：RSC payload 内嵌 initialData（与真实页面同构） */
 function embedPage(hash) {
-  const payload = `22:["$","$L29",null,{"initialData":{"id":15603635,"obfuscatedId":"${hash}","title":"Mock Embed Pano","status":"complete","file_url":"http://127.0.0.1:${PORT}/fake-image.jpg?scene=embed"}}]`;
+  const payload = `22:["$","$L29",null,{"initialData":{"id":15603635,"obfuscatedId":"${hash}","title":"Mock Embed Pano","status":"complete","file_url":"http://127.0.0.1:${PORT}/banded-image.jpg"}}]`;
   return `<!doctype html><html><head><meta charset="utf-8"><title>Mock Embed</title></head><body>
 <div id="app">Mock Embed Viewer</div>
 <script>self.__next_f=self.__next_f||[];self.__next_f.push([1,${JSON.stringify(payload)}]);</script>
@@ -46,6 +52,9 @@ export function startMockSite() {
           thumb_url: `http://127.0.0.1:${PORT}/fake-image.jpg`,
         },
       }));
+    } else if (u.pathname === '/banded-image.jpg') {
+      res.setHeader('content-type', 'image/jpeg');
+      res.end(BANDED_JPG);
     } else if (u.pathname === '/fake-image.jpg') {
       res.setHeader('content-type', 'image/jpeg');
       res.end(Buffer.from(FAKE_JPG_B64, 'base64'));

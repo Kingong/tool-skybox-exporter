@@ -1,4 +1,5 @@
 import puppeteer from 'puppeteer-core';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -28,6 +29,25 @@ function findChrome() {
 const CHROME = findChrome();
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** 用 PIL 校验下载图：尺寸 + 上/下边缘亮度（横幅是否去除） */
+function verifyImageWithPil(file) {
+  const py = `
+import json, sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert('RGB')
+w, h = im.size
+px = im.load()
+def lum(y):
+    s = 0
+    for x in range(40):
+        r, g, b = px[x, y]
+        s += 0.299*r + 0.587*g + 0.114*b
+    return round(s / 40)
+print(json.dumps({'w': w, 'h': h, 'topLum': lum(0), 'bottomLum': lum(h - 1)}))
+`;
+  return JSON.parse(execFileSync('python3', ['-c', py, file], { encoding: 'utf8' }));
+}
 
 async function waitDownloadedFile(dir, timeoutMs = 20000, exclude = new Set()) {
   const start = Date.now();
@@ -82,8 +102,11 @@ try {
   await page.waitForSelector('#skybox-exporter-fab', { timeout: 15000 });
   console.log('fab injected');
 
-  // 4. 点击导出 → 等待文件落盘
-  await page.click('#skybox-exporter-fab');
+  // 4. 点击「原图」导出 → 等待文件落盘
+  await page.evaluate(() => {
+    document.querySelector('#skybox-exporter-fab button[data-action="original"]')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
   const file = await waitDownloadedFile(DL_DIR);
   if (!file) throw new Error('download timeout: no file landed');
 
@@ -124,28 +147,24 @@ try {
   if (!swTarget) throw new Error('no SW target');
   const swWorker = await swTarget.worker();
   swWorker.on('console', (m) => console.log('[sw]', m.text()));
-  // DOM click 派发（puppeteer click 的 scrollIntoView 在此环境对 fixed 元素不稳定）
+  // 7b. 点击「导出无横幅版」（页面内 fetch + canvas 裁剪 + a[download]）
   await page.evaluate(() => {
-    document.querySelector('#skybox-exporter-fab')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    document.querySelector('#skybox-exporter-fab button[data-action="cropped"]')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });
-  // 轮询等第二个下载 complete，拿实际落盘路径做字节断言
-  const start = Date.now();
-  let item2 = null;
-  while (Date.now() - start < 20000) {
-    const items = await swWorker.evaluate(async () => {
-      const list = await chrome.downloads.search({});
-      return JSON.parse(JSON.stringify(list));
-    });
-    const hit = items.find((i) => i.id > 1 && i.state === 'complete' && i.filename);
-    if (hit) { item2 = hit; break; }
-    await sleep(300);
+  const startCrop = Date.now();
+  let croppedFile = null;
+  while (Date.now() - startCrop < 30000) {
+    const hit = readdirSync(DL_DIR).find((n) => n.includes('-no-banner') && !n.endsWith('.crdownload'));
+    if (hit) { croppedFile = join(DL_DIR, hit); break; }
+    await sleep(400);
   }
-  if (!item2) throw new Error('embed scenario download not completed');
-  const got2 = readFileSync(item2.filename);
-  if (!got2.equals(Buffer.from(FAKE_JPG_B64, 'base64'))) {
-    throw new Error('embed scenario downloaded content mismatch');
-  }
-  console.log(`embed scenario verified: ${item2.filename} (byte-identical)`);
+  if (!croppedFile) throw new Error('cropped download timeout');
+  const check = verifyImageWithPil(croppedFile);
+  console.log('cropped image:', JSON.stringify(check));
+  if (check.w !== 800 || check.h !== 264) throw new Error(`crop size wrong: ${check.w}x${check.h}, expect 800x264`);
+  if (check.topLum < 100 || check.bottomLum < 100) throw new Error('banner not fully cropped');
+  console.log('crop scenario verified (800x264, banners removed)');
 
   console.log('PASS: e2e closed-loop complete (main site + popup + embed share page)');
   process.exitCode = 0;
