@@ -1,6 +1,17 @@
 {
   "name": "skybox-exporter",
   "description": "一键导出你在 Skybox AI 生成的全景原图（免费账号可用）。",
+  "keywords": [
+    "skybox",
+    "skybox-ai",
+    "blockade-labs",
+    "360-panorama",
+    "browser-extension",
+    "chrome-extension",
+    "wxt",
+    "vue3"
+  ],
+  "license": "MIT",
   "private": true,
   "version": "0.1.0",
   "type": "module",

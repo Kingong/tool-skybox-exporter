@@ -1,50 +1,57 @@
 # Skybox Exporter
 
-一键导出你在 [Skybox AI](https://skybox.blockadelabs.com) 生成的 360° 全景原图（免费账号无官方导出按钮）。
+Export your [Skybox AI](https://skybox.blockadelabs.com) 360° panoramas as full-resolution images (8K equirectangular JPG) — including on free accounts, which have no official download button.
 
-## 原理
+[中文说明](./README.zh-CN.md)
 
-Skybox 前端 viewer 渲染全景时必须从后端加载原图。本扩展在页面内检测该原图 URL：
-分享页（`/e/<hash>`）直接解析 SSR 注入的 RSC `initialData`；生成器页面复用前端自身
-`/api/proxy` 接口主动查询 + `performance` 资源条目被动观察兜底。随后通过
-`chrome.downloads` 直连下载原始文件——不做 canvas 截图，画质无损（最高 8192×4096）。
-点击导出的瞬间会重新检测一次，确保使用未过期的最新 URL。
+![Share page with export buttons](docs/screenshots/share-page-fab.png)
 
-## 功能
+## Features
 
-- 页面右下角注入导出按钮（检测到已完成 skybox 时出现）：
-  - **导出无横幅版 (8K)**：页面内 canvas 裁掉官方上下水印横幅（实测各 17%），JPEG q0.95
-  - **原图（带水印）**：官方原样图直下，字节无损
-- 支持生成器页面与 **`/e/<hash>` 公开分享页**（解析 RSC `initialData`，直连公开 download 端点）
-- 工具栏 popup 展示当前 skybox 卡片（缩略图 / 标题 / 状态）并提供同样的导出选项
-- 下载文件名自动使用 skybox 标题（非法字符自动清洗）
+- One-click export buttons injected into Skybox pages (generator pages and public `/e/<hash>` share pages):
+  - **No-banner export**: crops the official watermark banners locally (top/bottom, measured 17% each on 8K images), JPEG q95
+  - **Original export**: byte-identical download of the officially served image (watermark preserved)
+- Toolbar popup shows the current skybox card (thumbnail / title / status) with the same export options
+- Downloaded files are named after the skybox title
 
-## 开发
+| Original (with watermark banners) | No-banner crop |
+|---|---|
+| ![with watermark](docs/images/sample-watermarked.jpg) | ![no banner](docs/images/sample-no-banner.jpg) |
+
+## How It Works
+
+The Skybox web viewer must load the full panorama into your browser to render it. This extension detects that image URL in-page — parsing the SSR-injected RSC `initialData` on share pages, or reusing the frontend's own `/api/proxy` API on app pages — and downloads the file directly. **No canvas screenshots, no quality loss** (up to 8192×4096). Cropping is done locally in your browser via canvas.
+
+## Install (Developer Mode)
+
+1. Download and unzip `skybox-exporter-<version>-chrome.zip` from Releases, or build from source (`pnpm build`)
+2. Open `chrome://extensions`, enable **Developer mode**
+3. **Load unpacked** → select the `chrome-mv3` folder
+4. Open any of your skyboxes (or a share link) and use the buttons at the bottom-right corner
+
+## Development
 
 ```bash
 pnpm install
-pnpm dev      # 开发模式（自动打开浏览器，HMR）
-pnpm build    # 构建到 .output/chrome-mv3
-pnpm test     # 单元测试（vitest）
-pnpm e2e      # 端到端闭环验收（mock 站点 + Chrome for Testing 加载扩展，需 xvfb）
+pnpm dev      # dev mode with HMR
+pnpm build    # build to .output/chrome-mv3
+pnpm test     # unit tests (vitest)
+pnpm e2e      # end-to-end loop (mock site + real Chrome loads the extension; needs xvfb)
 ```
 
-> e2e 说明：Chrome 137+ branded 版已移除 `--load-extension`，脚本自动探测
-> playwright 缓存中的 Chrome for Testing / Chromium；也可用 `CHROME_PATH=<path>` 指定。
+Tech: WXT 0.21 · Vue 3 · TypeScript · Manifest V3. See [docs/verification.md](docs/verification.md) for the full reverse-engineering and verification record.
 
-## 安装（开发者模式）
+## Disclaimer
 
-1. `pnpm build`
-2. Chrome 打开 `chrome://extensions`，开启「开发者模式」
-3. 「加载已解压的扩展程序」选择 `.output/chrome-mv3`
+**This project is for educational and personal learning purposes only.**
 
-## 合规声明
-
-- 仅供导出**本人账号生成**的内容；生成内容的许可条款以 Blockade Labs 官方为准（免费内容为 CC-BY）。
-- **关于水印**：免费账号官方下发的图片带上下水印横幅（服务端强制，viewer 所见即所得）。本扩展提供两种导出：原样下载（保留水印）与本地裁剪去横幅（裁掉上下各 17%，横幅不侵入主体区域；裁剪是用户对已合法获得内容的本地处理）。真正的无水印 2:1 全景原图请订阅官方 premium。
-- 本项目与 Blockade Labs 无关，为非官方工具；不提供官方 premium 导出格式（HDRI / cube-map / 3D 等）的任何能力。
-- e2e 使用的 `http://127.0.0.1/*` content script 匹配仅用于本地自动化验收。
+- This is an independent, unofficial tool. It is **not affiliated with, endorsed by, or sponsored by Blockade Labs**. "Skybox AI" and "Blockade Labs" are trademarks of their respective owner.
+- It does **not** crack, bypass, or circumvent any paid functionality. It only saves image data that your own browser has already loaded while viewing content under your own account, via the platform's own publicly served endpoints.
+- The official watermark banners are **preserved** in the "original" export. The optional no-banner export is a purely local cropping operation performed on your own machine, on content you have already lawfully obtained. No premium-only resource is ever accessed.
+- You are solely responsible for ensuring that your use of downloaded content complies with Blockade Labs' Terms of Service and the applicable content license (free-tier content is provided under CC-BY — attribution is required).
+- This software is provided "as is", without warranty of any kind. The authors are not liable for any misuse or any consequences arising from its use.
+- If you are a rights holder and have concerns about this project, please open an issue and it will be addressed promptly.
 
 ## License
 
-MIT
+[MIT](./LICENSE)
