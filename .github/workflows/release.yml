@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm test
+
+      - name: Build & zip
+        run: pnpm zip
+
+      - name: Read version
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Locate zip artifact
+        id: zip
+        run: |
+          zip_path=".output/skybox-exporter-${{ steps.version.outputs.version }}-chrome.zip"
+          if [ ! -f "$zip_path" ]; then
+            echo "ERROR: expected $zip_path not found"; ls -la .output/; exit 1
+          fi
+          echo "path=$zip_path" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            ## 安装
+
+            1. 下载下方 `*-chrome.zip` 并解压
+            2. Chrome 打开 `chrome://extensions`，开启「开发者模式」
+            3. 「加载已解压的扩展程序」选择解压后的 `chrome-mv3` 目录
+            4. 打开你的 Skybox（或分享链接），使用右下角按钮导出
+
+            ## Install
+
+            1. Download `*-chrome.zip` below and unzip it
+            2. Open `chrome://extensions`, enable **Developer mode**
+            3. **Load unpacked** → select the `chrome-mv3` folder
+            4. Open your Skybox (or a share link) and use the export buttons
+
+            ---
+          files: |
+            ${{ steps.zip.outputs.path }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
